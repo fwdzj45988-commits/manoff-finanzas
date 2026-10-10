@@ -110,6 +110,11 @@
   .cuota.next .n { background: var(--brand); color: var(--brand-ink); }
   .cuota .mid { flex: 1; min-width: 0; }
   .btn-sm { background: var(--navy); color: #fff; border-radius: 10px; padding: 8px 12px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .fondo-mov { display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+  .fondo-mov:first-child { border-top: 0; }
+  .fondo-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .fondo-btns button { padding: 11px; border-radius: 12px; font-weight: 800; background: var(--chip); }
+  .fondo-btns button.on { background: var(--brand); color: var(--brand-ink); }
   .btn-ghost { color: var(--muted); font-size: 12.5px; font-weight: 700; padding: 6px 4px; }
 
   /* barra inferior */
@@ -209,6 +214,9 @@
         <div><div class="lbl">Saldo de capital</div><div class="val num" id="pSaldo">$0</div></div>
         <div><div class="lbl">Próxima cuota</div><div class="val num" id="pProx">—</div><div class="sub" id="pProxF"></div></div>
       </div>
+      <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+        <div class="lbl">🐷 Fondo para cuotas</div><div class="val num" id="pFondo">$0</div><div class="sub" id="pFondoS"></div>
+      </div>
     </button>
 
     <h2>Mes a mes</h2>
@@ -250,6 +258,15 @@
         <div>Intereses<b class="num" id="plInt">$0</b></div>
       </div>
     </div>
+    <h2>🐷 Fondo para cuotas</h2>
+    <div class="card kpi">
+      <div class="lbl">Plata apartada para pagar el préstamo</div>
+      <div class="val num" id="fdSaldo" style="font-size:28px">$0</div>
+      <div class="progress"><div id="fdBar" style="width:0"></div></div>
+      <div class="sub" id="fdSub"></div>
+      <div class="fondo-btns"><button class="on" onclick="abrirFondo('Aporte')">+ Aportar</button><button onclick="abrirFondo('Retiro')">Retirar</button></div>
+    </div>
+    <div class="list" id="fdMovs" style="margin-top:12px"></div>
     <h2>Cuotas</h2>
     <div class="list" id="cuotas"></div>
   </section>
@@ -365,6 +382,8 @@ function pintarInicio() {
   $('pSaldo').textContent = plata(p.saldoCapital);
   $('pProx').textContent = p.proxima ? plata(p.proxima.total) : '—';
   $('pProxF').textContent = p.proxima ? fechaCorta(p.proxima.fecha) : 'sin pendientes';
+  $('pFondo').textContent = plata(d.fondo.saldo);
+  $('pFondoS').textContent = textoCobertura();
 
   // gráfico de barras mensual
   const W = 340, H = 150, top = 8, base = H - 22, max = Math.max(1, ...r.meses.map(m => Math.max(m.ing, m.egr)));
@@ -437,6 +456,14 @@ function pintarPrestamo() {
   $('plFalta').textContent = plata(p.falta);
   $('plInt').textContent = plata(p.interesTotal);
   $('plBar').style.width = (p.totalAPagar ? p.pagado / p.totalAPagar * 100 : 0) + '%';
+  const f = S.d.fondo;
+  $('fdSaldo').textContent = plata(f.saldo);
+  $('fdBar').style.width = (p.proxima ? Math.min(100, f.saldo / p.proxima.total * 100) : 0) + '%';
+  $('fdSub').textContent = textoCobertura();
+  $('fdMovs').hidden = !f.movimientos.length;
+  $('fdMovs').innerHTML = f.movimientos.slice(0, 10).map(m => `<div class="fondo-mov">
+    <div><b>${esc(m.movimiento)}</b>${m.detalle ? ` <span class="muted">· ${esc(m.detalle)}</span>` : ''}<div class="muted" style="font-size:12.5px">${fechaCorta(m.fecha)}</div></div>
+    <div class="num ${m.monto > 0 ? 'pos' : ''}" style="font-weight:800;white-space:nowrap">${plata(m.monto, true)}</div></div>`).join('');
   $('cuotas').innerHTML = p.cuotas.length ? p.cuotas.map(c => {
     const esProx = p.proxima && c.fila === p.proxima.fila, vencida = !c.pagada && c.fecha < S.d.hoy;
     return `<div class="cuota ${c.pagada ? 'paid' : esProx ? 'next' : ''}">
@@ -447,6 +474,39 @@ function pintarPrestamo() {
                  : `<button class="btn-sm" onclick="abrirCuota(${c.fila})">Marcar pagada</button>`}
     </div>`;
   }).join('') : '<div class="empty">No hay cuotas cargadas</div>';
+}
+
+// Cuánto cubre el fondo de la próxima cuota.
+function textoCobertura() {
+  const p = S.d.prestamo, saldo = S.d.fondo.saldo;
+  if (!p.proxima) return 'sin cuotas pendientes';
+  return saldo >= p.proxima.total ? '✓ alcanza para la próxima cuota'
+    : 'faltan ' + plata(p.proxima.total - saldo) + ' para la cuota del ' + fechaCorta(p.proxima.fecha);
+}
+
+function abrirFondo(movimiento) {
+  const aporte = movimiento === 'Aporte';
+  abrirSheet(`
+    <h3>${aporte ? '🐷 Aportar al fondo' : 'Retirar del fondo'}</h3>
+    <div class="muted">Hay ${plata(S.d.fondo.saldo)} apartados. ${aporte ? 'Apartar plata no cuenta como gasto: el gasto se registra al pagar la cuota.' : 'Pagar una cuota no es un retiro: al marcarla pagada se descuenta sola.'}</div>
+    <div class="f"><label>Monto</label><div class="amount"><span>$</span><input id="fdMonto" class="num" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0"></div></div>
+    <div class="grid2">
+      <div class="f"><label>Fecha</label><input id="fdFecha" class="field" type="date" value="${S.d.hoy}"></div>
+      <div class="f"><label>Detalle (opcional)</label><input id="fdDet" class="field"></div>
+    </div>
+    <div class="err" id="fdErr"></div>
+    <button class="btn brand" id="fdOk">${aporte ? 'Aportar' : 'Retirar'}</button>`);
+  setTimeout(() => $('fdMonto').focus(), 260);
+  $('fdOk').onclick = async () => {
+    const monto = Number($('fdMonto').value);
+    if (!(monto > 0)) { $('fdErr').textContent = 'Poné el monto.'; return; }
+    if (!aporte && monto > S.d.fondo.saldo) { $('fdErr').textContent = 'En el fondo hay ' + plata(S.d.fondo.saldo) + '.'; return; }
+    $('fdOk').disabled = true;
+    try {
+      const r = await call('fondo', { movimiento, monto, fecha: $('fdFecha').value, detalle: $('fdDet').value });
+      pintar(r.datos); cerrarSheet(); toast(aporte ? 'Aporte guardado ✓' : 'Retiro guardado ✓');
+    } catch (e) { $('fdErr').textContent = e.message.replace(/^.*Error:\s*/, ''); $('fdOk').disabled = false; }
+  };
 }
 
 // ── hoja inferior ──
@@ -541,6 +601,7 @@ function abrirCuota(fila) {
     <div class="f"><label>¿Cómo se pagó?</label>${chips('formaPago', S.d.listas.formasPago, 'Transferencia')}</div>
     <div class="f"><label>Fecha de pago</label><input id="cFecha" class="field" type="date" value="${S.d.hoy}"></div>
     <label class="check"><input type="checkbox" id="cEgreso" checked> Registrarla también como gasto ("Cuota préstamo")</label>
+    ${S.d.fondo.saldo > 0 ? `<div class="alert">🐷 <span>Del fondo de cuotas se descuentan <b class="num">${plata(Math.min(S.d.fondo.saldo, c.total))}</b>${S.d.fondo.saldo < c.total ? ' (no alcanza para toda la cuota)' : ''}</span></div>` : ''}
     <div class="err" id="cErr"></div>
     <button class="btn brand" id="cOk">Marcar como pagada</button>`);
   activarChips();
@@ -557,7 +618,7 @@ async function desmarcarCuota(fila) {
   const c = S.d.prestamo.cuotas.find(x => x.fila === fila);
   abrirSheet(`
     <h3>¿Desmarcar la cuota #${c.numero}?</h3>
-    <div class="muted">Vuelve a figurar como pendiente. Si la habías registrado como gasto, ese gasto sigue en Movimientos (lo podés eliminar desde ahí).</div>
+    <div class="muted">Vuelve a figurar como pendiente. Si la habías registrado como gasto, ese gasto sigue en Movimientos (lo podés eliminar desde ahí). Lo que se había usado del fondo de cuotas vuelve al fondo.</div>
     <div class="err" id="cErr"></div>
     <button class="btn" id="cOk">Sí, desmarcar</button>`);
   $('cOk').onclick = async () => {
