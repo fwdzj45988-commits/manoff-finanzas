@@ -134,12 +134,16 @@
   .serv.off { opacity: .55; }
   .add-row { display: block; width: 100%; padding: 14px; text-align: center; font-weight: 800; color: var(--navy-2); border-top: 1px solid var(--line); }
   @media (prefers-color-scheme: dark) { .add-row { color: #8FB0FF; } }
+  .socio .n { background: var(--navy); color: #fff; font-size: 16px; }
+  .socio.cero .n { background: var(--chip); color: var(--muted); }
+  .socio .saldo { text-align: right; font-weight: 800; white-space: nowrap; line-height: 1.25; }
+  .nota { font-size: 13px; color: var(--muted); margin-top: 8px; }
   .equiv { font-size: 13px; color: var(--muted); margin-top: 6px; min-height: 18px; }
 
   /* barra inferior */
   .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--card); border-top: 1px solid var(--line);
     display: flex; justify-content: space-around; align-items: center; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
-  .tab { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; font-weight: 700; color: var(--muted); padding: 4px 2px; min-width: 62px; }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10.5px; font-weight: 700; color: var(--muted); padding: 4px 0; min-width: 52px; }
   .tab svg { width: 23px; height: 23px; }
   .tab.on { color: var(--ink); }
   .fab { width: 56px; height: 56px; border-radius: 18px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center;
@@ -308,6 +312,21 @@
     <div class="list" id="svList"></div>
     <div class="muted" style="font-size:12.5px;margin:12px 4px">El día 1 de cada mes el bot de Telegram avisa cuáles hay que pagar. Al marcar uno como pagado se registra solo como gasto.</div>
   </section>
+
+  <!-- SOCIOS -->
+  <section id="v-socios" hidden>
+    <div class="card hero">
+      <div class="lbl">Manöff les debe a los socios</div>
+      <div class="big num" id="soTotal" style="font-size:30px">—</div>
+      <div class="lbl">gastos que pagaron de su bolsillo + aportes − lo que ya se les devolvió</div>
+    </div>
+    <h2>Por socio</h2>
+    <div class="list" id="soList"></div>
+    <div class="fondo-btns"><button class="on" onclick="abrirSocio('Reintegro')">↩️ Devolver plata</button><button onclick="abrirSocio('Aporte')">+ Anotar aporte</button></div>
+    <h2>Movimientos</h2>
+    <div class="list" id="soMovs"></div>
+    <div class="muted" style="font-size:12.5px;margin:12px 4px">¿Un socio pagó un gasto de su bolsillo? Cargalo con el <b>+</b> como cualquier gasto y elegí quién lo pagó: cuenta como gasto de Manöff y queda acá como deuda. Lo puesto en pesos se devuelve en pesos y lo puesto en dólares, en dólares.</div>
+  </section>
 </main>
 
 <nav class="tabs">
@@ -321,6 +340,8 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15l2.5 2.5L16 13"/></svg>Servicios</button>
   <button class="tab" data-v="prestamo" onclick="go('prestamo')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3z"/></svg>Préstamo</button>
+  <button class="tab" data-v="socios" onclick="go('socios')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14a6.5 6.5 0 0 1 3.5 6"/></svg>Socios</button>
 </nav>
 
 <div class="scrim" id="scrim" onclick="cerrarSheet()"></div>
@@ -385,7 +406,7 @@ $('year').onchange = async () => { S.anio = Number($('year').value); S.fMes = ''
 // ── navegación ──
 function go(v) {
   S.vista = v;
-  ['inicio', 'movs', 'servicios', 'prestamo'].forEach(x => $('v-' + x).hidden = x !== v);
+  ['inicio', 'movs', 'servicios', 'prestamo', 'socios'].forEach(x => $('v-' + x).hidden = x !== v);
   document.querySelectorAll('.tab[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   window.scrollTo(0, 0);
 }
@@ -396,7 +417,7 @@ function pintar(d) {
   $('year').innerHTML = d.anios.map(a => `<option ${a === d.anio ? 'selected' : ''}>${a}</option>`).join('');
   $('sheetLink').href = d.sheetUrl;
   if (!S.svMes) S.svMes = d.hoy.slice(0, 7);
-  pintarInicio(); pintarMovs(); pintarPrestamo(); pintarServicios();
+  pintarInicio(); pintarMovs(); pintarPrestamo(); pintarServicios(); pintarSocios();
 }
 
 // "en pesos: $X" debajo de un total que ya los incluye convertidos.
@@ -429,6 +450,8 @@ function pintarInicio() {
   if (r.porCobrar.cant) al += `<div class="alert">⏳ <span>Por cobrar: <b class="num">${plata(r.porCobrar.monto)}</b> en ${r.porCobrar.cant} ingreso${r.porCobrar.cant > 1 ? 's' : ''}</span></div>`;
   const p = d.prestamo;
   if (p.proxima && p.proxima.fecha < d.hoy) al += `<div class="alert">⚠️ <span>Cuota #${p.proxima.numero} del préstamo vencida (${fechaCorta(p.proxima.fecha)}) · <b class="num">${plata(p.proxima.total)}</b></span></div>`;
+  const deuda = textoSaldo(d.socios.total);
+  if (deuda) al += `<div class="alert" onclick="go('socios')" style="cursor:pointer">🤝 <span>Manöff les debe a los socios: <b class="num">${deuda}</b></span></div>`;
   $('alerts').innerHTML = al;
 
   $('pSaldo').textContent = plata(p.saldoCapital);
@@ -478,7 +501,7 @@ function pintarLista() {
   const movs = S.d.movimientos.filter(m =>
     (S.fTipo === 'todos' || m.tipo === S.fTipo) &&
     (S.fMes ? m.fecha.startsWith(S.fMes) : m.fecha.startsWith(String(S.anio))) &&
-    (!q || [m.descripcion, m.categoria, m.contraparte, m.formaPago, m.moneda === 'ARS' ? 'pesos ars' : 'dólares usd', String(m.monto)].join(' ').toLowerCase().includes(q)));
+    (!q || [m.descripcion, m.categoria, m.contraparte, m.formaPago, m.pagadoPor, m.moneda === 'ARS' ? 'pesos ars' : 'dólares usd', String(m.monto)].join(' ').toLowerCase().includes(q)));
   if (!movs.length) { $('movList').innerHTML = '<div class="empty">No hay movimientos con esos filtros.<br>Tocá <b>+</b> para cargar uno.</div>'; return; }
   const grupos = {};
   movs.forEach(m => { const k = m.fecha.slice(0, 7); (grupos[k] = grupos[k] || []).push(m); });
@@ -492,7 +515,7 @@ function pintarLista() {
 function itemHtml(m) {
   const ing = m.tipo === 'ingreso';
   const pend = m.estado && m.estado !== 'Sí' ? `<span class="badge">${ing ? 'Sin cobrar' : 'Sin pagar'}${m.estado === 'Pendiente' ? ' · pendiente' : ''}</span>` : '';
-  const sub = [fechaCorta(m.fecha), m.categoria, m.contraparte, m.formaPago].filter(Boolean).map(esc).join(' · ');
+  const sub = [fechaCorta(m.fecha), m.pagadoPor ? '👤 pagó ' + m.pagadoPor : '', m.categoria, m.contraparte, m.formaPago].filter(Boolean).map(esc).join(' · ');
   return `<button class="item" onclick="abrirForm('${m.id}')">
     <div class="ico ${ing ? 'in' : 'out'}">${ing ? '💰' : '💸'}</div>
     <div class="mid"><div class="d">${esc(m.descripcion) || '<span class="muted">Sin descripción</span>'}</div><div class="s">${sub}</div></div>
@@ -628,7 +651,7 @@ function activarMonto(p, fechaId) {
 let F = null, MF = null;
 function abrirForm(id) {
   const m = id ? S.d.movimientos.find(x => x.id === id) : null;
-  F = m ? Object.assign({}, m) : { tipo: 'egreso', fecha: S.d.hoy, moneda: leerLocal('moneda') || 'USD', monto: '', cotizacion: 0, categoria: '', contraparte: '', descripcion: '', formaPago: '', estado: 'Sí' };
+  F = m ? Object.assign({}, m) : { tipo: 'egreso', fecha: S.d.hoy, moneda: leerLocal('moneda') || 'USD', monto: '', cotizacion: 0, categoria: '', contraparte: '', descripcion: '', formaPago: '', estado: 'Sí', pagadoPor: '' };
   F.confirmarBorrar = false;
   renderForm();
 }
@@ -646,13 +669,20 @@ function renderForm() {
       <div class="f"><label>Fecha</label><input id="fFecha" class="field" type="date" value="${F.fecha}"></div>
       <div class="f"><label>${ing ? 'Cliente' : 'Proveedor (opcional)'}</label><input id="fContra" class="field" list="dlContra" value="${esc(F.contraparte)}"><datalist id="dlContra">${contrapartes.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
     </div>
+    ${ing ? '' : `<div class="f"><label>¿Quién lo pagó?</label>${chipsPagadoPor(F.pagadoPor)}<div class="nota" id="fSocioNota"></div></div>`}
     <div class="f"><label>Forma de pago</label>${chips('formaPago', L.formasPago, F.formaPago)}</div>
-    <div class="f"><label>${ing ? '¿Cobrado?' : '¿Pagado?'}</label>${chips('estado', [['Sí', ing ? 'Cobrado' : 'Pagado'], ['Pendiente', 'Pendiente'], ['No', ing ? 'No cobrado' : 'No pagado']], F.estado)}</div>
+    <div class="f" id="fEstadoBox"><label>${ing ? '¿Cobrado?' : '¿Pagado?'}</label>${chips('estado', [['Sí', ing ? 'Cobrado' : 'Pagado'], ['Pendiente', 'Pendiente'], ['No', ing ? 'No cobrado' : 'No pagado']], F.estado)}</div>
     <div class="err" id="fErr"></div>
     <button class="btn brand" id="fGuardar">${F.id ? 'Guardar cambios' : 'Guardar'}</button>
     ${F.id ? `<button class="btn danger" id="fBorrar">${F.confirmarBorrar ? '¿Seguro? Tocá de nuevo para mandarlo a la papelera' : 'Eliminar'}</button>` : ''}
   `);
-  activarChips();
+  const notaSocio = v => {
+    if (ing) return;
+    $('fSocioNota').textContent = v ? 'Cuenta como gasto de Manöff y queda anotado que Manöff le debe esta plata a ' + v + ' (pestaña Socios).' : '';
+    $('fEstadoBox').hidden = !!v; // si lo puso un socio, al proveedor ya se le pagó
+  };
+  activarChips((campo, v) => { if (campo === 'pagadoPor') notaSocio(v); });
+  notaSocio(F.pagadoPor);
   MF = activarMonto('f', 'fFecha');
   $('fTipo').onclick = e => {
     const b = e.target.closest('button'); if (!b || b.dataset.v === F.tipo) return;
@@ -666,6 +696,8 @@ function renderForm() {
 function leerForm() {
   F.moneda = MF.moneda(); F.monto = MF.monto(); F.cotizacion = MF.cot(); F.descripcion = $('fDesc').value.trim(); F.fecha = $('fFecha').value;
   F.contraparte = $('fContra').value.trim(); F.categoria = valorChips('categoria'); F.formaPago = valorChips('formaPago'); F.estado = valorChips('estado');
+  F.pagadoPor = F.tipo === 'egreso' ? valorChips('pagadoPor') : '';
+  if (F.pagadoPor) F.estado = 'Sí';
 }
 
 async function guardarForm() {
@@ -675,11 +707,11 @@ async function guardarForm() {
   if (err) { $('fErr').textContent = err; return; }
   const btn = $('fGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
   if (!F.id) guardarLocal('moneda', F.moneda);
-  const mov = { tipo: F.tipo, fecha: F.fecha, moneda: F.moneda, monto: Number(F.monto), cotizacion: F.cotizacion, categoria: F.categoria, contraparte: F.contraparte, descripcion: F.descripcion, formaPago: F.formaPago, estado: F.estado };
+  const mov = { tipo: F.tipo, fecha: F.fecha, moneda: F.moneda, monto: Number(F.monto), cotizacion: F.cotizacion, categoria: F.categoria, contraparte: F.contraparte, descripcion: F.descripcion, formaPago: F.formaPago, estado: F.estado, pagadoPor: F.pagadoPor };
   try {
     const r = await call(F.id ? 'editar' : 'agregar', F.id ? { id: F.id, mov } : { mov });
     if (Number(F.fecha.slice(0, 4)) !== S.anio) { S.anio = Number(F.fecha.slice(0, 4)); r.datos = (await call('init')).datos; }
-    pintar(r.datos); cerrarSheet(); toast(F.id ? 'Cambios guardados ✓' : 'Guardado ✓');
+    pintar(r.datos); cerrarSheet(); toast((F.id ? 'Cambios guardados ✓' : 'Guardado ✓') + (F.pagadoPor ? ' · Manöff le debe a ' + F.pagadoPor + ' ' + textoSaldo(saldoDe(F.pagadoPor)) : ''));
   } catch (e) { $('fErr').textContent = e.message.replace(/^.*Error:\s*/, ''); btn.disabled = false; btn.textContent = 'Guardar'; }
 }
 
@@ -822,6 +854,7 @@ function abrirPagoServicio(id) {
     ${montoHtml('p', s.moneda, s.monto, 0)}
     <div class="f"><label>Fecha de pago</label><input id="pFecha" class="field" type="date" value="${S.d.hoy}"></div>
     <div class="f"><label>¿Cómo se pagó?</label>${chips('formaPago', S.d.listas.formasPago, s.formaPago || 'Transferencia')}</div>
+    <div class="f"><label>¿Quién lo pagó?</label>${chipsPagadoPor('')}</div>
     <div class="err" id="pErr"></div>
     <button class="btn brand" id="pOk">Marcar como pagado</button>`);
   activarChips();
@@ -832,7 +865,7 @@ function abrirPagoServicio(id) {
     if (!(monto > 0)) { $('pErr').textContent = 'Poné el monto que pagaste.'; return; }
     $('pOk').disabled = true;
     try {
-      const r = await call('pagarServicio', { servicioId: id, mes, monto, moneda: M.moneda(), cotizacion: M.cot(), fecha: $('pFecha').value, formaPago: valorChips('formaPago') });
+      const r = await call('pagarServicio', { servicioId: id, mes, monto, moneda: M.moneda(), cotizacion: M.cot(), fecha: $('pFecha').value, formaPago: valorChips('formaPago'), pagadoPor: valorChips('pagadoPor') });
       pintar(r.datos); cerrarSheet(); toast(s.nombre + ' pagado ✓');
     } catch (e) { $('pErr').textContent = e.message.replace(/^.*Error:\s*/, ''); $('pOk').disabled = false; }
   };
@@ -852,6 +885,113 @@ function deshacerPagoServicio(fila) {
       pintar(r.datos); cerrarSheet();
       toast(r.resultado.gastoBorrado ? 'Pago deshecho' : 'Pago deshecho. El gasto no lo encontré: revisá Movimientos');
     } catch (e) { $('dErr').textContent = e.message.replace(/^.*Error:\s*/, ''); $('dOk').disabled = false; }
+  };
+}
+
+// ── socios ──
+function chipsPagadoPor(valor) {
+  return chips('pagadoPor', [['', '🏢 Manöff']].concat(S.d.listas.socios.map(x => [x, '👤 ' + x])), valor || '');
+}
+// "US$120 + $45.000"; '' si está en cero.
+function textoSaldo(saldo) {
+  return ['USD', 'ARS'].filter(m => Math.abs(saldo[m]) >= 0.005).map(m => plata(saldo[m], false, m)).join(' + ');
+}
+function saldoDe(nombre) { return S.d.socios.socios.find(x => x.nombre === nombre).saldo; }
+
+function pintarSocios() {
+  const d = S.d.socios;
+  $('soTotal').textContent = textoSaldo(d.total) || 'Nada 🎉';
+  $('soList').innerHTML = d.socios.map(x => {
+    const debe = textoSaldo(x.saldo), puso = textoSaldo(x.puso), dev = textoSaldo(x.devuelto);
+    const lineas = ['USD', 'ARS'].filter(m => Math.abs(x.saldo[m]) >= 0.005).map(m => `<div class="${x.saldo[m] < 0 ? 'neg' : ''}">${plata(x.saldo[m], false, m)}</div>`).join('');
+    const positivo = ['USD', 'ARS'].some(m => x.saldo[m] > 0.005);
+    return `<div class="cuota socio ${debe ? '' : 'cero'}">
+      <div class="n">${esc(x.nombre[0])}</div>
+      <div class="mid"><b>${esc(x.nombre)}</b>
+        <div class="s muted num" style="font-size:12.5px">${puso ? 'Puso ' + puso + (dev ? ' · le devolvimos ' + dev : '') : 'Sin movimientos'}</div></div>
+      <div class="saldo num">${lineas || '<div class="muted" style="font-size:13px">✓ al día</div>'}
+        ${positivo ? `<button class="btn-sm" style="margin-top:6px" onclick="abrirSocio('Reintegro', '${esc(x.nombre)}')">Devolver</button>` : ''}</div>
+    </div>`;
+  }).join('');
+  const ico = { Gasto: '🧾', Aporte: '💵', Reintegro: '↩️' };
+  $('soMovs').innerHTML = d.movimientos.length ? d.movimientos.map((m, i) => {
+    const txt = m.movimiento === 'Gasto' ? 'pagó ' + (m.detalle || 'un gasto') : m.movimiento === 'Aporte' ? 'aportó' + (m.detalle ? ' · ' + m.detalle : '') : 'le devolvimos' + (m.detalle ? ' · ' + m.detalle : '');
+    return `<button class="item" onclick="${m.origen === 'gasto' ? `abrirForm('${m.id}')` : `verMovSocio(${i})`}">
+      <div class="ico ${m.monto > 0 ? 'out' : 'in'}">${ico[m.movimiento]}</div>
+      <div class="mid"><div class="d">${esc(m.socio)} ${esc(txt)}</div><div class="s">${[fechaCorta(m.fecha), m.categoria, m.formaPago].filter(Boolean).map(esc).join(' · ')}</div></div>
+      <div class="m num ${m.monto < 0 ? 'pos' : ''}">${plata(m.monto, true, m.moneda)}</div></button>`;
+  }).join('') : '<div class="empty">Todavía no hay nada anotado.</div>';
+}
+
+// Aporte (el socio pone plata en la caja) o reintegro (Manöff le devuelve).
+function abrirSocio(movimiento, socio) {
+  const aporte = movimiento === 'Aporte', socios = S.d.listas.socios;
+  const conDeuda = socios.filter(x => ['USD', 'ARS'].some(m => saldoDe(x)[m] > 0.005));
+  socio = socio || (aporte ? '' : conDeuda.length === 1 ? conDeuda[0] : '');
+  let moneda = 'USD';
+  if (socio && !aporte && !(saldoDe(socio).USD > 0.005) && saldoDe(socio).ARS > 0.005) moneda = 'ARS';
+  abrirSheet(`
+    <h3>${aporte ? '💵 Anotar aporte de un socio' : '↩️ Devolverle plata a un socio'}</h3>
+    <div class="muted">${aporte ? 'Plata que un socio puso en la caja de Manöff. No es un ingreso: queda como deuda con el socio. (Si pagó un gasto puntual, cargalo con el + y elegí quién lo pagó.)'
+      : 'No es un gasto (el gasto ya se registró cuando se pagó): solo baja lo que Manöff le debe.'}</div>
+    <div class="f"><label>Socio</label>${chips('socio', socios, socio)}</div>
+    <div class="f"><label>Monto</label>
+      <div class="seg" id="soMon" style="margin-bottom:10px">${[['USD', '💵 Dólares'], ['ARS', '🇦🇷 Pesos']].map(([v, t]) =>
+        `<button type="button" data-v="${v}" class="${v === moneda ? 'on' : ''}">${t}</button>`).join('')}</div>
+      <div class="amount"><span id="soSim">${moneda === 'ARS' ? '$' : 'US$'}</span><input id="soMonto" class="num" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0"></div>
+      <div class="nota" id="soNota"></div></div>
+    <div class="grid2">
+      <div class="f"><label>Fecha</label><input id="soFecha" class="field" type="date" value="${S.d.hoy}"></div>
+      <div class="f"><label>Detalle (opcional)</label><input id="soDet" class="field"></div>
+    </div>
+    <div class="f"><label>Forma de pago (opcional)</label>${chips('formaPago', S.d.listas.formasPago, '')}</div>
+    <div class="err" id="soErr"></div>
+    <button class="btn brand" id="soOk">${aporte ? 'Guardar aporte' : 'Guardar reintegro'}</button>`);
+  const nota = () => {
+    const quien = valorChips('socio');
+    if (!quien) { $('soNota').innerHTML = ''; return; }
+    const debe = saldoDe(quien)[moneda];
+    $('soNota').innerHTML = aporte ? `Hoy Manöff le debe a ${esc(quien)} ${esc(textoSaldo(saldoDe(quien)) || 'nada')}.`
+      : debe > 0.005 ? `Manöff le debe ${plata(debe, false, moneda)} en ${moneda === 'ARS' ? 'pesos' : 'dólares'}. <button type="button" class="link" id="soTodo">Devolver todo</button>`
+      : `Manöff no le debe nada en ${moneda === 'ARS' ? 'pesos' : 'dólares'}.`;
+    if ($('soTodo')) $('soTodo').onclick = () => { $('soMonto').value = debe; };
+  };
+  activarChips(campo => { if (campo === 'socio') nota(); });
+  $('soMon').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    moneda = b.dataset.v;
+    $('soMon').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    $('soSim').textContent = moneda === 'ARS' ? '$' : 'US$';
+    nota();
+  };
+  nota();
+  $('soOk').onclick = async () => {
+    const quien = valorChips('socio'), monto = Number($('soMonto').value);
+    const err = !quien ? 'Elegí el socio.' : !(monto > 0) ? 'Poné el monto.'
+      : !aporte && monto > saldoDe(quien)[moneda] + 0.001 ? 'Manöff le debe ' + (plata(Math.max(0, saldoDe(quien)[moneda]), false, moneda)) + ' en ' + (moneda === 'ARS' ? 'pesos.' : 'dólares.') : '';
+    if (err) { $('soErr').textContent = err; return; }
+    $('soOk').disabled = true;
+    try {
+      const r = await call('socio', { movimiento, socio: quien, moneda, monto, fecha: $('soFecha').value, detalle: $('soDet').value, formaPago: valorChips('formaPago') });
+      pintar(r.datos); cerrarSheet(); toast((aporte ? 'Aporte guardado ✓' : 'Reintegro guardado ✓') + ' · Manöff le debe ' + (textoSaldo(saldoDe(quien)) || 'nada'));
+    } catch (e) { $('soErr').textContent = e.message.replace(/^.*Error:\s*/, ''); $('soOk').disabled = false; }
+  };
+}
+
+function verMovSocio(i) {
+  const m = S.d.socios.movimientos[i];
+  abrirSheet(`
+    <h3>${m.movimiento === 'Aporte' ? '💵 Aporte de ' : '↩️ Reintegro a '}${esc(m.socio)}</h3>
+    <div class="big num" style="font-size:28px;font-weight:800">${plata(Math.abs(m.monto), false, m.moneda)}</div>
+    <div class="muted">${[fechaCorta(m.fecha), m.formaPago, m.detalle].filter(Boolean).map(esc).join(' · ')}</div>
+    <div class="err" id="amErr"></div>
+    <button class="btn danger" id="amOk">Anular (si se cargó por error)</button>`);
+  let seguro = false;
+  $('amOk').onclick = async () => {
+    if (!seguro) { seguro = true; $('amOk').textContent = '¿Seguro? Tocá de nuevo para anularlo'; return; }
+    $('amOk').disabled = true;
+    try { const r = await call('anularSocio', { fila: m.fila }); pintar(r.datos); cerrarSheet(); toast('Anulado'); }
+    catch (e) { $('amErr').textContent = e.message.replace(/^.*Error:\s*/, ''); $('amOk').disabled = false; }
   };
 }
 
