@@ -730,16 +730,28 @@ function abrirCuota(fila) {
     <div class="muted">Vence ${fechaCorta(c.fecha)} · interés ${plata(c.interes)}${c.capital ? ' + capital ' + plata(c.capital) : ''}</div>
     <div class="f"><label>¿Cómo se pagó?</label>${chips('formaPago', S.d.listas.formasPago, 'Transferencia')}</div>
     <div class="f"><label>Fecha de pago</label><input id="cFecha" class="field" type="date" value="${S.d.hoy}"></div>
-    <label class="check"><input type="checkbox" id="cEgreso" checked> Registrarla también como gasto ("Cuota préstamo")</label>
-    ${S.d.fondo.saldo > 0 ? `<div class="alert">🐷 <span>Del fondo de cuotas se descuentan <b class="num">${plata(Math.min(S.d.fondo.saldo, c.total))}</b>${S.d.fondo.saldo < c.total ? ' (no alcanza para toda la cuota)' : ''}</span></div>` : ''}
+    <div class="f"><label>¿Con qué plata se pagó?</label>${chips('fuente', [['fondo', '🐷 Fondo de cuotas'], ['caja', '🏢 Caja de Manöff']].concat(S.d.listas.socios.map(x => [x, '👤 ' + x])), S.d.fondo.saldo > 0 ? 'fondo' : 'caja')}
+      <div class="nota" id="cFuenteNota"></div></div>
+    <label class="check" id="cEgresoBox"><input type="checkbox" id="cEgreso" checked> Registrarla también como gasto ("Cuota préstamo")</label>
     <div class="err" id="cErr"></div>
     <button class="btn brand" id="cOk">Marcar como pagada</button>`);
-  activarChips();
+  const notaFuente = f => {
+    const fondo = S.d.fondo.saldo, usa = Math.min(fondo, c.total), socio = f !== 'fondo' && f !== 'caja';
+    $('cFuenteNota').innerHTML = f === 'fondo'
+      ? (fondo > 0 ? `Del fondo se descuentan <b class="num">${plata(usa)}</b>${fondo < c.total ? ` (hay ${plata(fondo)}: el resto, ${plata(c.total - fondo)}, sale de la caja)` : ''}.` : 'El fondo está vacío: sale todo de la caja.')
+      : f === 'caja' ? 'No se toca el fondo de cuotas.'
+      : `La pagó ${esc(f)} de su bolsillo: se registra el gasto y queda que Manöff le debe ${plata(c.total)} (pestaña Socios). No se toca el fondo.`;
+    $('cEgresoBox').hidden = socio; // sin el gasto no queda la deuda con el socio
+  };
+  activarChips((campo, v) => { if (campo === 'fuente') notaFuente(v); });
+  notaFuente(valorChips('fuente'));
   $('cOk').onclick = async () => {
     $('cOk').disabled = true;
+    const fuente = valorChips('fuente');
     try {
-      const r = await call('cuota', { fila, pagada: true, registrarEgreso: $('cEgreso').checked, formaPago: valorChips('formaPago'), fecha: $('cFecha').value });
-      pintar(r.datos); cerrarSheet(); toast('Cuota marcada como pagada ✓');
+      const r = await call('cuota', { fila, pagada: true, registrarEgreso: $('cEgreso').checked, formaPago: valorChips('formaPago'), fecha: $('cFecha').value, fuente });
+      pintar(r.datos); cerrarSheet();
+      toast('Cuota marcada como pagada ✓' + (fuente !== 'fondo' && fuente !== 'caja' ? ' · Manöff le debe a ' + fuente + ' ' + textoSaldo(saldoDe(fuente)) : ''));
     } catch (e) { $('cErr').textContent = e.message.replace(/^.*Error:\s*/, ''); $('cOk').disabled = false; }
   };
 }
